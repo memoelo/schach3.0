@@ -34,7 +34,7 @@ app.post('/api/rooms', (req, res) => {
 app.post('/api/analyze', async (req, res) => {
   const { pgn } = req.body || {}
   if (!pgn) return res.status(400).json({ error: 'Missing PGN' })
-  try { const report = await analyzeGame(pgn, { movetime: 200 }); res.json(report) }
+  try { const report = await analyzeGame(pgn, { movetime: 80 }); res.json(report) }
   catch (e) { res.status(500).json({ error: 'Analysis failed' }) }
 })
 app.get('/api/eval', async (req, res) => {
