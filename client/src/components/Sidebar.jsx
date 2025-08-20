@@ -3,7 +3,7 @@ import React from 'react'
 export default function Sidebar({ state, analysis }) {
   return (
     <div>
-      <h3>Partie</h3>
+      <h3 style={{marginTop:0}}>Partie</h3>
       <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.4 }}>
         {state?.pgn || '—'}
       </div>

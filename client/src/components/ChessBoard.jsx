@@ -2,11 +2,28 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 
-export default function ChessBoardView({ state, onMove }) {
+export default function ChessBoardView({ state, onMove, orientation='white', boardScale=90 }) {
   const [game, setGame] = useState(new Chess())
   const [moveSquares, setMoveSquares] = useState({})
   const [lastMove, setLastMove] = useState(null)
   const [premove, setPremove] = useState(null)
+
+  const containerRef = useRef(null)
+  const [boardWidth, setBoardWidth] = useState(500)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        const w = e.contentRect.width
+        const h = window.innerHeight - 180
+        const size = Math.min(w, h) * (boardScale/100)
+        setBoardWidth(Math.max(300, Math.floor(size)))
+      }
+    })
+    ro.observe(containerRef.current)
+    return () => ro.disconnect()
+  }, [boardScale])
 
   useEffect(() => {
     if (!state?.fen) return
@@ -14,7 +31,6 @@ export default function ChessBoardView({ state, onMove }) {
     setGame(g)
     setLastMove(state.lastMove || null)
     if (premove && g.turn() !== (premove.color === 'w' ? 'w' : 'b')) {
-      // apply premove when turn changes
       const legal = g.moves({ verbose: true })
       const mv = legal.find(m => (m.from + m.to + (m.promotion || '')) === premove.uci)
       if (mv) { onMove(premove.uci); setPremove(null) }
@@ -24,47 +40,22 @@ export default function ChessBoardView({ state, onMove }) {
   function getMoveOptions(square) {
     const legal = game.moves({ verbose: true })
     const ms = {}
-    legal.forEach(m => {
-      if (m.from === square) {
-        ms[m.to] = {
-          background: 'radial-gradient(circle, rgba(147,197,253,0.8) 25%, transparent 26%)',
-          borderRadius: '50%'
-        }
-      }
-    })
+    legal.forEach(m => { if (m.from === square) ms[m.to] = { background: 'radial-gradient(circle, rgba(147,197,253,0.8) 25%, transparent 26%)', borderRadius: '50%' } })
     setMoveSquares(ms)
   }
 
-  function onSquareClick(square) {
-    const legal = game.moves({ verbose: true })
-    const from = Object.keys(moveSquares).length ? null : square
-    if (!from) {
-      // second click: do a move if possible
-      const selectedFrom = Object.keys(moveSquares).find(() => true) // not needed
-    } else {
-      getMoveOptions(square)
-    }
-  }
-
-  const onPieceDrop = (sourceSquare, targetSquare, piece) => {
+  const onPieceDrop = (sourceSquare, targetSquare) => {
     const legal = game.moves({ verbose: true })
     const mv = legal.find(m => m.from === sourceSquare && m.to === targetSquare)
     const uci = mv ? (mv.from + mv.to + (mv.promotion || '')) : null
-    if (!uci) {
-      // set premove if not legal now
-      setPremove({ uci: sourceSquare + targetSquare, color: game.turn() })
-      return false
-    }
-    onMove(uci)
-    setMoveSquares({})
-    return true
+    if (!uci) { setPremove({ uci: sourceSquare + targetSquare, color: game.turn() }); return false }
+    onMove(uci); setMoveSquares({}); return true
   }
 
   const customSquareStyles = useMemo(() => {
     const styles = { ...moveSquares }
     if (lastMove) {
-      const from = lastMove.slice(0,2)
-      const to = lastMove.slice(2,4)
+      const from = lastMove.slice(0,2), to = lastMove.slice(2,4)
       styles[from] = { backgroundColor: 'rgba(34,197,94,0.5)' }
       styles[to] = { backgroundColor: 'rgba(34,197,94,0.5)' }
     }
@@ -72,14 +63,15 @@ export default function ChessBoardView({ state, onMove }) {
   }, [moveSquares, lastMove])
 
   return (
-    <div style={{ width: '100%', height: 'calc(100vh - 140px)' }}>
+    <div ref={containerRef} style={{ width: '100%', height: 'calc(100vh - 140px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <Chessboard
         id="Board"
         position={state?.fen || 'start'}
+        boardWidth={boardWidth}
         onPieceDrop={onPieceDrop}
         customBoardStyle={{ borderRadius: '12px', boxShadow: '0 0 0 1px #1f2937 inset' }}
         customSquareStyles={customSquareStyles}
-        boardOrientation={'white'}
+        boardOrientation={orientation}
         animationDuration={200}
         arePiecesDraggable={true}
         arePremovesAllowed={true}

@@ -19,7 +19,6 @@ export default function SoundManager() {
       capture: () => { tone(ctx, 200, 0.08, 'square', 0.04) },
       check: () => { tone(ctx, 880, 0.05, 'sawtooth', 0.05) },
       lose: () => {
-        // "Loser" Effekt: abwärts gleitender Ton
         const osc = ctx.createOscillator()
         const g = ctx.createGain()
         osc.type = 'sawtooth'

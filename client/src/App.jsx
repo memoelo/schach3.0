@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 import Sidebar from './components/Sidebar.jsx'
 import EvalBar from './components/EvalBar.jsx'
@@ -17,10 +17,11 @@ export default function App() {
   const [bots, setBots] = useState([])
   const [status, setStatus] = useState('')
   const [analysis, setAnalysis] = useState(null)
+  const [orientation, setOrientation] = useState('white')
+  const [boardScale, setBoardScale] = useState(90)
+  const [evalCp, setEvalCp] = useState(0)
 
-  useEffect(() => {
-    fetch('/api/bots').then(r => r.json()).then(setBots).catch(() => setBots([]))
-  }, [])
+  useEffect(() => { fetch('/api/bots').then(r => r.json()).then(setBots).catch(() => setBots([])) }, [])
 
   useEffect(() => {
     socket.on('connect', () => setConnected(true))
@@ -28,21 +29,25 @@ export default function App() {
     socket.on('joined', ({ roomId }) => setRoomId(roomId))
     socket.on('state', (s) => setState(s))
     socket.on('error_message', (m) => setStatus(m))
-    socket.on('game_over', (p) => {
-      setStatus('Spielende: ' + p.reason + ' – Ergebnis ' + p.result)
-      // Trigger loser sound
-      setTimeout(() => window.__sound?.lose(), 50)
-    })
-    return () => {
-      socket.off('connect'); socket.off('disconnect'); socket.off('joined'); socket.off('state'); socket.off('error_message'); socket.off('game_over')
-    }
+    socket.on('game_over', (p) => { setStatus('Spielende: ' + p.reason + ' – Ergebnis ' + p.result); setTimeout(() => window.__sound?.lose(), 50) })
+    return () => { socket.off() }
   }, [])
 
-  const joinExisting = () => {
-    const id = prompt('Raum-ID eingeben:')
-    if (id) socket.emit('join', { roomId: id })
-  }
+  // auto-join if hash present
+  useEffect(() => { const hash = location.hash.replace('#',''); if (hash && !roomId) socket.emit('join', { roomId: hash }) }, [roomId])
 
+  // eval bar update when FEN changes
+  useEffect(() => {
+    let abort = false
+    const run = async () => {
+      if (!state?.fen) return
+      try { const r = await fetch('/api/eval?fen=' + encodeURIComponent(state.fen)); const j = await r.json(); if (!abort && typeof j.evalCp === 'number') setEvalCp(j.evalCp) } catch {}
+    }
+    run()
+    return () => { abort = true }
+  }, [state?.fen])
+
+  const joinExisting = () => { const id = prompt('Raum-ID eingeben:'); if (id) socket.emit('join', { roomId: id }) }
   const newRoom = async (mode='pvp') => {
     const body = { mode, botId }
     const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -50,32 +55,18 @@ export default function App() {
     socket.emit('join', { roomId: j.roomId })
     if (mode === 'bot') { setPlayingBot(true); socket.emit('set_bot', { roomId: j.roomId, botId }) }
   }
-
   const shareUrl = roomId ? (location.origin + '/#' + roomId) : ''
-  useEffect(() => {
-    const hash = location.hash.replace('#','')
-    if (hash && !roomId) { socket.emit('join', { roomId: hash }) }
-  }, [])
 
-  const handleMove = (uci) => {
-    if (!roomId) return
-    socket.emit('move', { roomId, uci })
-    window.__sound?.move()
-  }
-
+  const handleMove = (uci) => { if (!roomId) return; socket.emit('move', { roomId, uci }); window.__sound?.move() }
   const analyze = async () => {
     if (!state?.pgn) return
-    setStatus('Analyse läuft...')
-    setAnalysis(null)
-    try {
-      const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pgn: state.pgn }) })
-      const j = await r.json()
-      setAnalysis(j)
-      setStatus('Analyse fertig.')
-    } catch (e) {
-      setStatus('Analyse fehlgeschlagen.')
-    }
+    setStatus('Analyse läuft...'); setAnalysis(null)
+    try { const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pgn: state.pgn }) }); const j = await r.json(); setAnalysis(j); setStatus('Analyse fertig.') }
+    catch (e) { setStatus('Analyse fehlgeschlagen.') }
   }
+  const flipBoard = () => setOrientation(o => (o === 'white' ? 'black' : 'white'))
+  const undo = () => { if (roomId) socket.emit('undo', { roomId }) }
+  const resetGame = () => { if (roomId) socket.emit('reset', { roomId }) }
 
   return (
     <div className="container">
@@ -88,19 +79,27 @@ export default function App() {
           {shareUrl && <a className="btn" href={shareUrl} target="_blank">Link kopieren/öffnen</a>}
           <span style={{ marginLeft: 'auto' }}>{status}</span>
         </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) 24px', gap: 12, alignItems: 'stretch' }}>
-          <ChessBoardView state={state} onMove={handleMove} />
-          <EvalBar evalCp={0 /* updated inside board vs bot if needed */} />
+          <ChessBoardView state={state} onMove={handleMove} orientation={orientation} boardScale={boardScale} />
+          <EvalBar evalCp={evalCp} />
         </div>
 
-        <div className="toolbar" style={{ marginTop: 12 }}>
-          <button className="btn primary" onClick={() => newRoom('pvp')}>Neues Online‑Spiel</button>
+        <div className="toolbar" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+          <button className="btn primary" onClick={() => newRoom('pvp')}>Neues Online-Spiel</button>
           <button className="btn" onClick={() => newRoom('bot')}>Gegen Bot</button>
           <button className="btn" onClick={joinExisting}>Raum beitreten</button>
           <button className="btn" onClick={analyze}>Analyse</button>
           <select className="btn" value={botId} onChange={e => setBotId(e.target.value)}>
             {bots.map(b => <option key={b.id} value={b.id}>{b.name} ({b.elo})</option>)}
           </select>
+          <button className="btn" onClick={flipBoard}>Brett drehen</button>
+          <button className="btn" onClick={undo}>Zug zurück</button>
+          <button className="btn" onClick={resetGame}>Neustart</button>
+          <label className="btn" style={{ display: 'flex', gap: 8 }}>
+            Größe
+            <input type="range" min="60" max="100" value={boardScale} onChange={e => setBoardScale(parseInt(e.target.value))} />
+          </label>
         </div>
       </div>
 
