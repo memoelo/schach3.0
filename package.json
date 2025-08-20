@@ -1,0 +1,10 @@
+{
+  "name": "chesscom-style-chess",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "license": "MIT"
+}
